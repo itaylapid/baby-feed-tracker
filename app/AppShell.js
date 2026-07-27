@@ -630,7 +630,8 @@ function initApp() {
       const recent=[...history].sort((a,b)=>b.endTime-a.endTime).slice(0,6);
       $('historyCard').innerHTML=recent.map(h=>{
         if(h.type==='nursing'){ const mins=Math.round(h.durationMs/60000);
-          return `<div class="hist-item"><div>הנקה · ${mins} דק'${h.estLow!=null?` · ~${h.estLow}-${h.estHigh} מ״ל`:''}<div class="h-time">${fmtTime(h.startTime)}</div></div><span class="tag">הנקה</span></div>`; }
+          const est = h.estLow!=null ? ` · ~${h.estLow}-${h.estHigh} מ״ל` : ` · <span style="color:var(--ink-soft); font-weight:500;">עוד אין מספיק נתונים להערכה</span>`;
+          return `<div class="hist-item"><div>הנקה · ${mins} דק'${est}<div class="h-time">${fmtTime(h.startTime)}</div></div><span class="tag">הנקה</span></div>`; }
         if(h.type==='pumped'){ return `<div class="hist-item"><div>שאיבה · ${h.amount} מ״ל<div class="h-time">${fmtTime(h.startTime)}</div></div><span class="tag">שאיבה</span></div>`; }
         return `<div class="hist-item"><div>${TYPE_LABEL[h.type]} · ${h.consumed}/${h.initial} מ״ל<div class="h-time">${fmtTime(h.startTime)}</div></div><span class="tag ${h.outcome==='discarded'?'discarded':''}">${h.outcome==='finished'?'הסתיים':'נזרק'}</span></div>`;
       }).join('');
@@ -673,8 +674,14 @@ function initApp() {
     const nurseCountToday = todayHist.filter(h=>h.type==='nursing').length;
     if(nurseCountToday){
       const production = perBreastProductionRatePerHour();
-      const src = production.count>0 ? `על קצב הפרשת החלב שלך (${production.count} שאיבות אחרונות) והזמן שחלף מאז ההנקה/שאיבה הקודמת` : 'על קצב שתייה מבקבוקים בעבר';
-      cards+=`<div class="tip"><b>הנקות היום</b>בוצעו ${nurseCountToday} הנקות. ההערכה מבוססת ${src}.</div>`;
+      const bottleRate = bottleRatePerMin();
+      if(production.count>0){
+        cards+=`<div class="tip"><b>הנקות היום</b>בוצעו ${nurseCountToday} הנקות. ההערכה מבוססת על קצב הפרשת החלב שלך (${production.count} שאיבות אחרונות) והזמן שחלף מאז ההנקה/שאיבה הקודמת.</div>`;
+      } else if(bottleRate!==null){
+        cards+=`<div class="tip"><b>הנקות היום</b>בוצעו ${nurseCountToday} הנקות. ההערכה מבוססת על קצב שתייה מבקבוקים בעבר.</div>`;
+      } else {
+        cards+=`<div class="tip"><b>הנקות היום</b>בוצעו ${nurseCountToday} הנקות, אבל עדיין אין מספיק נתוני שאיבה (עם פער של לפחות חצי שעה מההנקה/שאיבה הקודמת) או בקבוקים כדי להעריך כמות. ההערכה תופיע לבד ברגע שיהיו מספיק נתונים.</div>`;
+      }
     }
     if(!history.length){ cards+=`<div class="tip"><b>עוד אין נתונים</b>ככל שתתעדו יותר, כאן יופיעו תובנות על ${name}.</div>`; }
     $('insightCards').innerHTML=cards;
