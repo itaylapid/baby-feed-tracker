@@ -88,6 +88,8 @@ body{ font-family: var(--font-body); background: var(--bg); color: var(--ink); m
 .hist-item .h-time{ color: var(--ink-soft); font-size:11px; }
 .tag{ font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:999px; background: var(--accent-faint); color: var(--accent-dark); }
 .tag.discarded{ background: var(--danger-bg); color: var(--danger-ink); }
+.hist-del{ border:none; background:none; cursor:pointer; color: var(--ink-soft); padding:4px; display:flex; align-items:center; justify-content:center; flex:0 0 auto; border-radius:8px; }
+.hist-del:active{ color: var(--danger-ink); }
 
 .stat-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:14px; }
 .stat-box{ background: var(--surface); border:1px solid var(--line); border-radius: 18px; padding:16px; text-align:center; }

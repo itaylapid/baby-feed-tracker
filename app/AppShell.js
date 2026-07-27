@@ -25,8 +25,9 @@ const MARKUP = `
     <div id="nurseActiveWrap"></div>
     <div id="pumpActiveWrap"></div>
     <div id="list"></div>
-    <div class="section-label" id="histLabel" style="display:none;">היסטוריה אחרונה</div>
+    <div class="section-label" id="histLabel" style="display:none;">היסטוריה של היום</div>
     <div class="card" id="historyCard" style="display:none; padding:6px 16px;"></div>
+    <button class="text-btn" id="viewFullHistoryBtn" style="display:none; margin-top:2px;">צפייה בהיסטוריה המלאה ←</button>
   </div>
 
   <div id="viewInsights" style="display:none;">
@@ -113,6 +114,14 @@ const MARKUP = `
   </div>
 </div>
 
+<div class="overlay" id="fullHistoryOverlay">
+  <div class="sheet" style="max-height:82vh;">
+    <h2>היסטוריה מלאה</h2>
+    <div id="fullHistoryList"></div>
+    <button class="text-btn" id="closeFullHistoryBtn">סגור</button>
+  </div>
+</div>
+
 <div class="overlay" id="overlay">
   <div class="sheet">
     <h2 id="modalTitle">בקבוק חדש</h2>
@@ -121,6 +130,7 @@ const MARKUP = `
       <button type="button" data-type="breast" class="active">חלב אם</button>
       <button type="button" data-type="formula">פורמולה</button>
     </div>
+    <div class="field" id="bottleTimeField"><label>שעת ההכנה</label><input type="time" id="bottleTimeInput"></div>
     <div class="gauge-wrap">
       <svg id="bottleSvg" width="112" height="240" viewBox="0 0 140 280" style="touch-action:none; cursor:ns-resize;">
         <defs>
@@ -287,6 +297,7 @@ function initApp() {
     renderBabyHeader(); renderSettingsVals(); renderActionRow(); renderNurseActive(); renderPumpActive(); render(); renderInsights();
     if(nursingActive){ nursingTickInterval=setInterval(renderNurseActive,1000); }
     if(pumpingActive){ pumpTickInterval=setInterval(renderPumpActive,1000); }
+    if(await backfillNursingEstimates()){ render(); renderInsights(); }
   }
   async function saveBottles(){ try{ await storage.set(STORAGE_KEY,JSON.stringify(bottles)); }catch(e){} }
   async function saveHistory(){ try{ await storage.set(HISTORY_KEY,JSON.stringify(history)); }catch(e){} }
@@ -563,6 +574,21 @@ function initApp() {
     if(est===null) return null;
     return { low: Math.max(0,Math.round(est*0.8/5)*5), high: Math.round(est*1.2/5)*5, mid: Math.round(est/5)*5 };
   }
+  // Nursing sessions logged before there was enough pump/bottle data show no
+  // estimate. Whenever new data comes in, re-check every past "no estimate
+  // yet" nursing entry - if an estimate is possible now, fill it in using
+  // the best currently-known production rate.
+  async function backfillNursingEstimates(){
+    let changed=false;
+    for(const h of history){
+      if(h.type==='nursing' && h.estLow==null){
+        const est=estimateNursingMl(h.startTime, h.durationMs);
+        if(est){ h.estLow=est.low; h.estHigh=est.high; h.estMid=est.mid; changed=true; }
+      }
+    }
+    if(changed) await saveHistory();
+    return changed;
+  }
   async function togglePump(){
     if(pumpingActive){
       pendingPumpSession = { startTime: pumpingActive.startTime, endTime: Date.now() };
@@ -586,6 +612,7 @@ function initApp() {
     pendingPumpSession = null;
     await saveHistory(); $('pumpOverlay').classList.remove('open'); render(); renderInsights(); renderBabyHeader();
     confirmPulse(`נשאבו ${amt} מ״ל`);
+    if(await backfillNursingEstimates()){ render(); renderInsights(); }
   });
 
   // ---- bottles ----
@@ -595,6 +622,47 @@ function initApp() {
     const label=h>0?`${h} שעות ${m} דק'`:`${m} דק'`;
     return ms<=0?`פג לפני ${label}`:`נותרו ${label}`;
   }
+  function historyItemHtml(h){
+    let label, tag;
+    if(h.type==='nursing'){
+      const mins=Math.round(h.durationMs/60000);
+      const est = h.estLow!=null ? ` · ~${h.estLow}-${h.estHigh} מ״ל` : ` · <span style="color:var(--ink-soft); font-weight:500;">עוד אין מספיק נתונים להערכה</span>`;
+      label = `הנקה · ${mins} דק'${est}`;
+      tag = `<span class="tag">הנקה</span>`;
+    } else if(h.type==='pumped'){
+      label = `שאיבה · ${h.amount} מ״ל`;
+      tag = `<span class="tag">שאיבה</span>`;
+    } else {
+      label = `${TYPE_LABEL[h.type]} · ${h.consumed}/${h.initial} מ״ל`;
+      tag = `<span class="tag ${h.outcome==='discarded'?'discarded':''}">${h.outcome==='finished'?'הסתיים':'נזרק'}</span>`;
+    }
+    return `<div class="hist-item">
+      <div>${label}<div class="h-time">${fmtTime(h.startTime)}</div></div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        ${tag}
+        <button class="hist-del" onclick="deleteHistoryEntry('${h.id}')" aria-label="מחיקה"><span class="icon" style="width:14px;height:14px;">${ICONS.trash}</span></button>
+      </div>
+    </div>`;
+  }
+  window.deleteHistoryEntry=async function(id){
+    history=history.filter(x=>x.id!==id);
+    await saveHistory();
+    render(); renderInsights(); renderBabyHeader();
+    if($('fullHistoryOverlay').classList.contains('open')) renderFullHistory();
+  };
+  function renderFullHistory(){
+    const el=$('fullHistoryList');
+    if(!history.length){ el.innerHTML=`<div class="empty"><span class="icon">${ICONS.bottle}</span><div>אין עדיין היסטוריה</div></div>`; return; }
+    const groups={}; const order=[];
+    [...history].sort((a,b)=>b.endTime-a.endTime).forEach(h=>{
+      const key=new Date(h.startTime).toLocaleDateString('he-IL',{day:'numeric',month:'long',year:'numeric'});
+      if(!groups[key]){ groups[key]=[]; order.push(key); }
+      groups[key].push(h);
+    });
+    el.innerHTML = order.map(key=>`<div class="section-label" style="margin:16px 4px 8px;">${key}</div>${groups[key].map(historyItemHtml).join('')}`).join('');
+  }
+  $('viewFullHistoryBtn').addEventListener('click', ()=>{ renderFullHistory(); $('fullHistoryOverlay').classList.add('open'); });
+  $('closeFullHistoryBtn').addEventListener('click', ()=>$('fullHistoryOverlay').classList.remove('open'));
   function todayTotalMl(){
     const todayStart=new Date(); todayStart.setHours(0,0,0,0);
     const todayHist=history.filter(h=>h.endTime>=todayStart.getTime());
@@ -625,17 +693,13 @@ function initApp() {
         </div>`;
       }).join('');
     }
-    if(history.length){
+    const todayStartHist=new Date(); todayStartHist.setHours(0,0,0,0);
+    const todayEntries=[...history].filter(h=>h.endTime>=todayStartHist.getTime()).sort((a,b)=>b.endTime-a.endTime);
+    if(todayEntries.length){
       $('histLabel').style.display='block'; $('historyCard').style.display='block';
-      const recent=[...history].sort((a,b)=>b.endTime-a.endTime).slice(0,6);
-      $('historyCard').innerHTML=recent.map(h=>{
-        if(h.type==='nursing'){ const mins=Math.round(h.durationMs/60000);
-          const est = h.estLow!=null ? ` · ~${h.estLow}-${h.estHigh} מ״ל` : ` · <span style="color:var(--ink-soft); font-weight:500;">עוד אין מספיק נתונים להערכה</span>`;
-          return `<div class="hist-item"><div>הנקה · ${mins} דק'${est}<div class="h-time">${fmtTime(h.startTime)}</div></div><span class="tag">הנקה</span></div>`; }
-        if(h.type==='pumped'){ return `<div class="hist-item"><div>שאיבה · ${h.amount} מ״ל<div class="h-time">${fmtTime(h.startTime)}</div></div><span class="tag">שאיבה</span></div>`; }
-        return `<div class="hist-item"><div>${TYPE_LABEL[h.type]} · ${h.consumed}/${h.initial} מ״ל<div class="h-time">${fmtTime(h.startTime)}</div></div><span class="tag ${h.outcome==='discarded'?'discarded':''}">${h.outcome==='finished'?'הסתיים':'נזרק'}</span></div>`;
-      }).join('');
+      $('historyCard').innerHTML=todayEntries.map(historyItemHtml).join('');
     } else { $('histLabel').style.display='none'; $('historyCard').style.display='none'; }
+    $('viewFullHistoryBtn').style.display = history.length ? 'block' : 'none';
   }
   function renderInsights(){
     const todayStart=new Date(); todayStart.setHours(0,0,0,0);
@@ -694,6 +758,7 @@ function initApp() {
     $('modalTitle').textContent='נזרק — כמה נשאר?';
     $('modalSub').textContent='גררו לכמות שנשארה';
     $('typeToggle').style.display='none';
+    $('bottleTimeField').style.display='none';
     $('saveBtn').textContent='סמן כנזרק';
     buildTicks(); updateGauge();
     $('overlay').classList.add('open');
@@ -704,6 +769,7 @@ function initApp() {
     bottles=bottles.filter(x=>x.id!==b.id);
     await saveBottles(); await saveHistory(); render(); renderInsights(); renderBabyHeader();
     confirmPulse(outcome==='finished'?`נאכלו ${consumed} מ״ל`:`נזרקו ${remaining} · נאכלו ${consumed}`);
+    if(await backfillNursingEstimates()){ render(); renderInsights(); }
   }
 
   $('tabActive').addEventListener('click', ()=>{ $('tabActive').classList.add('active'); $('tabInsights').classList.remove('active'); $('viewActive').style.display='block'; $('viewInsights').style.display='none'; });
@@ -717,6 +783,9 @@ function initApp() {
     currentAmount=selectedType==='formula'?lastFormulaAmount:130;
     $('modalTitle').textContent='בקבוק חדש'; $('modalSub').textContent='כמה הכנתם?';
     $('typeToggle').style.display = (m==='formula_pump_bottle') ? 'flex' : 'none';
+    $('bottleTimeField').style.display='block';
+    const now=new Date();
+    $('bottleTimeInput').value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
     $('saveBtn').textContent='שמור בקבוק';
     document.querySelectorAll('#typeToggle button').forEach(b=>b.classList.toggle('active', b.dataset.type===selectedType));
     buildTicks(); updateGauge();
@@ -782,7 +851,15 @@ function initApp() {
 
   $('saveBtn').addEventListener('click', async ()=>{
     if(mode==='add'){
-      const bottle={id:'b-'+Date.now(), type:selectedType, amount:currentAmount, startTime:Date.now()};
+      let startTime=Date.now();
+      const timeVal=$('bottleTimeInput').value;
+      if(timeVal){
+        const [hh,mm]=timeVal.split(':').map(Number);
+        const d=new Date();
+        d.setHours(hh,mm,0,0);
+        startTime=d.getTime();
+      }
+      const bottle={id:'b-'+Date.now(), type:selectedType, amount:currentAmount, startTime};
       bottles.push(bottle);
       if(selectedType==='formula'){ lastFormulaAmount=currentAmount; await saveLastFormula(); }
       await saveBottles(); $('overlay').classList.remove('open'); render(); renderInsights();
@@ -808,6 +885,7 @@ function initApp() {
     svg.removeEventListener('touchmove', onTouchMove);
     svg.removeEventListener('touchend', onTouchEnd);
     delete window.openClose;
+    delete window.deleteHistoryEntry;
   };
 }
 
