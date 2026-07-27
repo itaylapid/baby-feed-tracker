@@ -270,6 +270,10 @@ function initApp() {
     try{ const r=await storage.get(STORAGE_KEY); bottles=r&&r.value?JSON.parse(r.value):[]; }catch(e){ bottles=[]; }
     try{ const r=await storage.get(HISTORY_KEY); history=r&&r.value?JSON.parse(r.value):[]; }catch(e){ history=[]; }
     try{ const r=await storage.get(PROFILE_KEY); profile=r&&r.value?JSON.parse(r.value):{}; }catch(e){ profile={}; }
+    try{
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      debugAlert(`profile load: user=${currentUser ? currentUser.email : 'NONE'} (${currentUser ? currentUser.id : '-'}) | profile=${JSON.stringify(profile)}`);
+    }catch(e){ debugAlert('profile debug check itself failed: ' + describeError(e)); }
     try{ const r=await storage.get(LAST_FORMULA_KEY); lastFormulaAmount=r&&r.value?JSON.parse(r.value):130; }catch(e){ lastFormulaAmount=130; }
     try{ const r=await storage.get(NURSE_KEY); nursingActive=r&&r.value?JSON.parse(r.value):null; }catch(e){ nursingActive=null; }
     try{ const r=await storage.get(NIGHT_KEY); nightOverride=r&&r.value!==undefined?JSON.parse(r.value):null; }catch(e){ nightOverride=null; }
