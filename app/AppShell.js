@@ -35,7 +35,7 @@ const MARKUP = `
 </div>
 
 <!-- onboarding step 1: baby identity -->
-<div class="overlay open center" id="identityOverlay">
+<div class="overlay center" id="identityOverlay">
   <div class="sheet">
     <h2>קודם כל, מי הכוכב/ת? </h2>
     <div class="sub2">כדי שהאפליקציה תרגיש שייכת אליכם</div>
@@ -163,40 +163,30 @@ const MARKUP = `
 </div>
 `;
 
-// TEMPORARY debug helper: shows errors as an on-screen alert so they're
-// visible even without opening DevTools (works on phones too). Remove once
-// the persistence bug is diagnosed.
-function debugAlert(msg) {
-  if (typeof window !== "undefined") window.alert("DEBUG: " + msg);
-}
-function describeError(e) {
-  if (!e) return "unknown error";
-  return [e.message, e.code && `code=${e.code}`, e.details, e.hint].filter(Boolean).join(" | ");
-}
-
 // Supabase-backed replacement for the original localStorage adapter. Same
 // get/set(key, value) shape (get returns { value: string|null }, set takes a
 // JSON string), scoped to the signed-in user via the app_state table's RLS
 // policies — so the ported script below needed almost no other changes.
+// Both accept an optional pre-fetched user to avoid a redundant
+// supabase.auth.getUser() round trip when the caller already has one
+// (loadData fetches it once and reuses it for all keys in parallel).
 const storage = {
-  async get(key) {
-    const { data: { user }, error: userErr } = await supabase.auth.getUser();
-    if (userErr) debugAlert(`getUser failed for get(${key}): ${describeError(userErr)}`);
-    if (!user) { debugAlert(`no user for get(${key})`); return { value: null }; }
+  async get(key, prefetchedUser) {
+    const user = prefetchedUser !== undefined ? prefetchedUser : (await supabase.auth.getUser()).data.user;
+    if (!user) return { value: null };
     const { data, error } = await supabase
       .from("app_state")
       .select("value")
       .eq("user_id", user.id)
       .eq("key", key)
       .maybeSingle();
-    if (error) debugAlert(`load failed for ${key}: ${describeError(error)}`);
+    if (error) console.error("app_state load failed:", key, error);
     if (error || !data) return { value: null };
     return { value: data.value };
   },
-  async set(key, value) {
-    const { data: { user }, error: userErr } = await supabase.auth.getUser();
-    if (userErr) debugAlert(`getUser failed for set(${key}): ${describeError(userErr)}`);
-    if (!user) { debugAlert(`no user for set(${key})`); return; }
+  async set(key, value, prefetchedUser) {
+    const user = prefetchedUser !== undefined ? prefetchedUser : (await supabase.auth.getUser()).data.user;
+    if (!user) return;
     const { error } = await supabase.from("app_state").upsert(
       {
         user_id: user.id,
@@ -206,7 +196,7 @@ const storage = {
       },
       { onConflict: "user_id,key" }
     );
-    if (error) debugAlert(`save failed for ${key}: ${describeError(error)}`);
+    if (error) console.error("app_state save failed:", key, error);
   },
 };
 
@@ -267,24 +257,31 @@ function initApp() {
   }
 
   async function loadData(){
-    try{ const r=await storage.get(STORAGE_KEY); bottles=r&&r.value?JSON.parse(r.value):[]; }catch(e){ bottles=[]; }
-    try{ const r=await storage.get(HISTORY_KEY); history=r&&r.value?JSON.parse(r.value):[]; }catch(e){ history=[]; }
-    try{ const r=await storage.get(PROFILE_KEY); profile=r&&r.value?JSON.parse(r.value):{}; }catch(e){ profile={}; }
-    try{
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      debugAlert(`profile load: user=${currentUser ? currentUser.email : 'NONE'} (${currentUser ? currentUser.id : '-'}) | profile=${JSON.stringify(profile)}`);
-    }catch(e){ debugAlert('profile debug check itself failed: ' + describeError(e)); }
-    try{ const r=await storage.get(LAST_FORMULA_KEY); lastFormulaAmount=r&&r.value?JSON.parse(r.value):130; }catch(e){ lastFormulaAmount=130; }
-    try{ const r=await storage.get(NURSE_KEY); nursingActive=r&&r.value?JSON.parse(r.value):null; }catch(e){ nursingActive=null; }
-    try{ const r=await storage.get(NIGHT_KEY); nightOverride=r&&r.value!==undefined?JSON.parse(r.value):null; }catch(e){ nightOverride=null; }
-    try{ const r=await storage.get(WEIGHT_KEY); weightHistory=r&&r.value?JSON.parse(r.value):[]; }catch(e){ weightHistory=[]; }
-    try{ const r=await storage.get(PUMP_ACTIVE_KEY); pumpingActive=r&&r.value?JSON.parse(r.value):null; }catch(e){ pumpingActive=null; }
-    try{ const r=await storage.get(PHOTO_KEY); babyPhoto=r&&r.value?r.value:null; }catch(e){ babyPhoto=null; }
+    const currentUser = (await supabase.auth.getUser()).data.user;
+    const [bottlesR, historyR, profileR, lastFormulaR, nurseR, nightR, weightR, pumpR, photoR] = await Promise.all([
+      storage.get(STORAGE_KEY, currentUser),
+      storage.get(HISTORY_KEY, currentUser),
+      storage.get(PROFILE_KEY, currentUser),
+      storage.get(LAST_FORMULA_KEY, currentUser),
+      storage.get(NURSE_KEY, currentUser),
+      storage.get(NIGHT_KEY, currentUser),
+      storage.get(WEIGHT_KEY, currentUser),
+      storage.get(PUMP_ACTIVE_KEY, currentUser),
+      storage.get(PHOTO_KEY, currentUser),
+    ]);
+    try{ bottles=bottlesR&&bottlesR.value?JSON.parse(bottlesR.value):[]; }catch(e){ bottles=[]; }
+    try{ history=historyR&&historyR.value?JSON.parse(historyR.value):[]; }catch(e){ history=[]; }
+    try{ profile=profileR&&profileR.value?JSON.parse(profileR.value):{}; }catch(e){ profile={}; }
+    try{ lastFormulaAmount=lastFormulaR&&lastFormulaR.value?JSON.parse(lastFormulaR.value):130; }catch(e){ lastFormulaAmount=130; }
+    try{ nursingActive=nurseR&&nurseR.value?JSON.parse(nurseR.value):null; }catch(e){ nursingActive=null; }
+    try{ nightOverride=nightR&&nightR.value!==undefined?JSON.parse(nightR.value):null; }catch(e){ nightOverride=null; }
+    try{ weightHistory=weightR&&weightR.value?JSON.parse(weightR.value):[]; }catch(e){ weightHistory=[]; }
+    try{ pumpingActive=pumpR&&pumpR.value?JSON.parse(pumpR.value):null; }catch(e){ pumpingActive=null; }
+    try{ babyPhoto=photoR&&photoR.value?photoR.value:null; }catch(e){ babyPhoto=null; }
     applyNightMode(); setAvatarImages();
 
-    if(profile.babyName){ $('identityOverlay').classList.remove('open'); }
-    if(profile.feedingMode){ $('onboardOverlay').classList.remove('open'); }
-    else if(profile.babyName){ $('onboardOverlay').classList.add('open'); }
+    if(!profile.babyName){ $('identityOverlay').classList.add('open'); }
+    if(profile.babyName && !profile.feedingMode){ $('onboardOverlay').classList.add('open'); }
 
     renderBabyHeader(); renderSettingsVals(); renderActionRow(); renderNurseActive(); renderPumpActive(); render(); renderInsights();
     if(nursingActive){ nursingTickInterval=setInterval(renderNurseActive,1000); }
