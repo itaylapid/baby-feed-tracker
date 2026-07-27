@@ -27,12 +27,13 @@ const MARKUP = `
     <div id="list"></div>
     <div class="section-label" id="histLabel" style="display:none;">היסטוריה של היום</div>
     <div class="card" id="historyCard" style="display:none; padding:6px 16px;"></div>
-    <button class="text-btn" id="viewFullHistoryBtn" style="display:none; margin-top:2px;">צפייה בהיסטוריה המלאה ←</button>
+    <button class="text-btn" id="showMoreHistoryBtn" style="display:none; margin-top:2px;">הצג עוד</button>
   </div>
 
   <div id="viewInsights" style="display:none;">
     <div class="stat-grid" id="statGrid"></div>
     <div id="insightCards"></div>
+    <button class="text-btn" id="viewFullHistoryBtn" style="margin-top:6px;">צפייה בהיסטוריה המלאה ←</button>
   </div>
 </div>
 
@@ -122,6 +123,26 @@ const MARKUP = `
   </div>
 </div>
 
+<div class="overlay center" id="historyActionsOverlay">
+  <div class="sheet" style="text-align:center;">
+    <h2>רשומה</h2>
+    <button class="primary-btn" id="historyActionsEditBtn">עריכה</button>
+    <button class="text-btn" id="historyActionsDeleteBtn" style="color:var(--danger-ink); margin-top:14px;">מחיקה</button>
+    <button class="text-btn" id="historyActionsCancelBtn">ביטול</button>
+  </div>
+</div>
+
+<div class="overlay" id="editHistoryOverlay">
+  <div class="sheet">
+    <h2 id="editHistoryTitle">עריכת רשומה</h2>
+    <div class="field"><label>שעה</label><input type="time" id="editHistoryTime"></div>
+    <div class="field" id="editHistoryAmountField"><label id="editHistoryAmountLabel">כמות (מ״ל)</label><input type="number" id="editHistoryAmount" step="5" min="0"></div>
+    <div class="field" id="editHistoryDurationField"><label>משך (דקות)</label><input type="number" id="editHistoryDuration" step="1" min="0"></div>
+    <button class="primary-btn" id="saveEditHistoryBtn">שמור</button>
+    <button class="text-btn" id="cancelEditHistoryBtn">ביטול</button>
+  </div>
+</div>
+
 <div class="overlay" id="overlay">
   <div class="sheet">
     <h2 id="modalTitle">בקבוק חדש</h2>
@@ -161,7 +182,7 @@ const MARKUP = `
     <div class="sub2">כמה חלב נשאב?</div>
     <div class="gauge-wrap">
       <div class="gauge-num"><span id="pumpGaugeNum">100</span><small> מ״ל</small></div>
-      <input type="range" id="pumpRange" min="0" max="300" step="10" value="100" style="width:100%; margin-top:16px; accent-color:#C17A52;">
+      <input type="range" id="pumpRange" min="0" max="300" step="5" value="100" style="width:100%; margin-top:16px; accent-color:#C17A52;">
     </div>
     <button class="primary-btn" id="savePumpBtn">שמור שאיבה</button>
     <button class="text-btn" id="cancelPumpBtn">ביטול</button>
@@ -220,7 +241,8 @@ function initApp() {
     baby: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.4 3.6-7.5 8-7.5s8 3.1 8 7.5"/></svg>',
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
-    camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3.3"/></svg>'
+    camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3.3"/></svg>',
+    kebab: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5.5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="18.5" r="1.8"/></svg>'
   };
   document.getElementById('avatarBtn').innerHTML = ICONS.baby;
   document.getElementById('identityAvatarBtn').innerHTML = ICONS.camera;
@@ -230,7 +252,7 @@ function initApp() {
   const STORAGE_KEY='baby-bottles', HISTORY_KEY='baby-bottles-history', PROFILE_KEY='baby-profile';
   const LAST_FORMULA_KEY='last-formula-amount', NURSE_KEY='nursing-active', NIGHT_KEY='night-override';
   const WEIGHT_KEY='baby-weight-history', PUMP_ACTIVE_KEY='pumping-active', PHOTO_KEY='baby-photo';
-  const MAX_ML=250, TICK_STEP=10;
+  const MAX_ML=250, TICK_STEP=5;
   const SAFE_HOURS={breast:2, formula:1};
   const TYPE_LABEL={breast:'חלב אם', formula:'פורמולה'};
   const AGE_RANGES=[
@@ -245,6 +267,7 @@ function initApp() {
   let lastFormulaAmount=130, nursingActive=null, nursingTickInterval=null, nightOverride=null;
   let pumpingActive=null, pumpTickInterval=null, pendingPumpSession=null;
   let babyPhoto=null;
+  let historyExpanded=false;
 
   const $=id=>document.getElementById(id);
   function confirmPulse(label){
@@ -640,7 +663,7 @@ function initApp() {
       <div>${label}<div class="h-time">${fmtTime(h.startTime)}</div></div>
       <div style="display:flex; align-items:center; gap:8px;">
         ${tag}
-        <button class="hist-del" onclick="deleteHistoryEntry('${h.id}')" aria-label="מחיקה"><span class="icon" style="width:14px;height:14px;">${ICONS.trash}</span></button>
+        <button class="hist-del" onclick="openHistoryActions('${h.id}')" aria-label="אפשרויות"><span class="icon" style="width:16px;height:16px;">${ICONS.kebab}</span></button>
       </div>
     </div>`;
   }
@@ -650,6 +673,79 @@ function initApp() {
     render(); renderInsights(); renderBabyHeader();
     if($('fullHistoryOverlay').classList.contains('open')) renderFullHistory();
   };
+  let historyActionsId=null;
+  window.openHistoryActions=function(id){
+    historyActionsId=id;
+    $('historyActionsOverlay').classList.add('open');
+  };
+  $('historyActionsCancelBtn').addEventListener('click', ()=>{ $('historyActionsOverlay').classList.remove('open'); historyActionsId=null; });
+  $('historyActionsDeleteBtn').addEventListener('click', async ()=>{
+    $('historyActionsOverlay').classList.remove('open');
+    if(historyActionsId){ await deleteHistoryEntry(historyActionsId); historyActionsId=null; }
+  });
+  $('historyActionsEditBtn').addEventListener('click', ()=>{
+    $('historyActionsOverlay').classList.remove('open');
+    if(historyActionsId) openEditHistory(historyActionsId);
+  });
+  let editingHistoryId=null;
+  function openEditHistory(id){
+    const h=history.find(x=>x.id===id); if(!h) return;
+    editingHistoryId=id;
+    const d=new Date(h.startTime);
+    $('editHistoryTime').value=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    if(h.type==='nursing'){
+      $('editHistoryTitle').textContent='עריכת הנקה';
+      $('editHistoryAmountField').style.display='none';
+      $('editHistoryDurationField').style.display='block';
+      $('editHistoryDuration').value=Math.round(h.durationMs/60000);
+    } else if(h.type==='pumped'){
+      $('editHistoryTitle').textContent='עריכת שאיבה';
+      $('editHistoryAmountField').style.display='block';
+      $('editHistoryAmountLabel').textContent='כמות (מ״ל)';
+      $('editHistoryAmount').value=h.amount;
+      $('editHistoryDurationField').style.display='none';
+    } else {
+      $('editHistoryTitle').textContent='עריכת בקבוק';
+      $('editHistoryAmountField').style.display='block';
+      $('editHistoryAmountLabel').textContent='כמות שנאכלה (מ״ל)';
+      $('editHistoryAmount').value=h.consumed;
+      $('editHistoryDurationField').style.display='none';
+    }
+    $('editHistoryOverlay').classList.add('open');
+  }
+  $('cancelEditHistoryBtn').addEventListener('click', ()=>{ $('editHistoryOverlay').classList.remove('open'); editingHistoryId=null; });
+  $('saveEditHistoryBtn').addEventListener('click', async ()=>{
+    const h=history.find(x=>x.id===editingHistoryId); if(!h) return;
+    const timeVal=$('editHistoryTime').value;
+    if(timeVal){
+      const [hh,mm]=timeVal.split(':').map(Number);
+      const d=new Date(h.startTime); d.setHours(hh,mm,0,0);
+      const delta=d.getTime()-h.startTime;
+      h.startTime=d.getTime();
+      h.endTime=h.endTime+delta;
+    }
+    if(h.type==='nursing'){
+      const mins=Number($('editHistoryDuration').value);
+      if(mins>=0){
+        h.durationMs=mins*60000;
+        h.endTime=h.startTime+h.durationMs;
+        const est=estimateNursingMl(h.startTime,h.durationMs);
+        h.estLow=est?est.low:null; h.estHigh=est?est.high:null; h.estMid=est?est.mid:null;
+      }
+    } else if(h.type==='pumped'){
+      const amt=Number($('editHistoryAmount').value);
+      if(amt>=0) h.amount=amt;
+    } else {
+      const amt=Number($('editHistoryAmount').value);
+      if(amt>=0) h.consumed=amt;
+    }
+    await saveHistory();
+    $('editHistoryOverlay').classList.remove('open'); editingHistoryId=null;
+    render(); renderInsights(); renderBabyHeader();
+    if($('fullHistoryOverlay').classList.contains('open')) renderFullHistory();
+    if(await backfillNursingEstimates()){ render(); renderInsights(); }
+    confirmPulse('הרשומה עודכנה');
+  });
   function renderFullHistory(){
     const el=$('fullHistoryList');
     if(!history.length){ el.innerHTML=`<div class="empty"><span class="icon">${ICONS.bottle}</span><div>אין עדיין היסטוריה</div></div>`; return; }
@@ -662,6 +758,7 @@ function initApp() {
     el.innerHTML = order.map(key=>`<div class="section-label" style="margin:16px 4px 8px;">${key}</div>${groups[key].map(historyItemHtml).join('')}`).join('');
   }
   $('viewFullHistoryBtn').addEventListener('click', ()=>{ renderFullHistory(); $('fullHistoryOverlay').classList.add('open'); });
+  $('showMoreHistoryBtn').addEventListener('click', ()=>{ historyExpanded=true; render(); });
   $('closeFullHistoryBtn').addEventListener('click', ()=>$('fullHistoryOverlay').classList.remove('open'));
   function todayTotalMl(){
     const todayStart=new Date(); todayStart.setHours(0,0,0,0);
@@ -697,9 +794,12 @@ function initApp() {
     const todayEntries=[...history].filter(h=>h.endTime>=todayStartHist.getTime()).sort((a,b)=>b.endTime-a.endTime);
     if(todayEntries.length){
       $('histLabel').style.display='block'; $('historyCard').style.display='block';
-      $('historyCard').innerHTML=todayEntries.map(historyItemHtml).join('');
-    } else { $('histLabel').style.display='none'; $('historyCard').style.display='none'; }
-    $('viewFullHistoryBtn').style.display = history.length ? 'block' : 'none';
+      const shown = historyExpanded ? todayEntries : todayEntries.slice(0,6);
+      $('historyCard').innerHTML=shown.map(historyItemHtml).join('');
+      const remaining = todayEntries.length-shown.length;
+      if(remaining>0){ $('showMoreHistoryBtn').textContent=`הצג עוד ${remaining}`; $('showMoreHistoryBtn').style.display='block'; }
+      else { $('showMoreHistoryBtn').style.display='none'; }
+    } else { $('histLabel').style.display='none'; $('historyCard').style.display='none'; $('showMoreHistoryBtn').style.display='none'; }
   }
   function renderInsights(){
     const todayStart=new Date(); todayStart.setHours(0,0,0,0);
@@ -886,6 +986,7 @@ function initApp() {
     svg.removeEventListener('touchend', onTouchEnd);
     delete window.openClose;
     delete window.deleteHistoryEntry;
+    delete window.openHistoryActions;
   };
 }
 
