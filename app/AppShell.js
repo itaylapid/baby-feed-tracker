@@ -163,27 +163,40 @@ const MARKUP = `
 </div>
 `;
 
+// TEMPORARY debug helper: shows errors as an on-screen alert so they're
+// visible even without opening DevTools (works on phones too). Remove once
+// the persistence bug is diagnosed.
+function debugAlert(msg) {
+  if (typeof window !== "undefined") window.alert("DEBUG: " + msg);
+}
+function describeError(e) {
+  if (!e) return "unknown error";
+  return [e.message, e.code && `code=${e.code}`, e.details, e.hint].filter(Boolean).join(" | ");
+}
+
 // Supabase-backed replacement for the original localStorage adapter. Same
 // get/set(key, value) shape (get returns { value: string|null }, set takes a
 // JSON string), scoped to the signed-in user via the app_state table's RLS
 // policies — so the ported script below needed almost no other changes.
 const storage = {
   async get(key) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { value: null };
+    const { data: { user }, error: userErr } = await supabase.auth.getUser();
+    if (userErr) debugAlert(`getUser failed for get(${key}): ${describeError(userErr)}`);
+    if (!user) { debugAlert(`no user for get(${key})`); return { value: null }; }
     const { data, error } = await supabase
       .from("app_state")
       .select("value")
       .eq("user_id", user.id)
       .eq("key", key)
       .maybeSingle();
-    if (error) console.error("app_state load failed:", key, error);
+    if (error) debugAlert(`load failed for ${key}: ${describeError(error)}`);
     if (error || !data) return { value: null };
     return { value: data.value };
   },
   async set(key, value) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const { data: { user }, error: userErr } = await supabase.auth.getUser();
+    if (userErr) debugAlert(`getUser failed for set(${key}): ${describeError(userErr)}`);
+    if (!user) { debugAlert(`no user for set(${key})`); return; }
     const { error } = await supabase.from("app_state").upsert(
       {
         user_id: user.id,
@@ -193,7 +206,7 @@ const storage = {
       },
       { onConflict: "user_id,key" }
     );
-    if (error) console.error("app_state save failed:", key, error);
+    if (error) debugAlert(`save failed for ${key}: ${describeError(error)}`);
   },
 };
 
