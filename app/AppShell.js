@@ -205,8 +205,8 @@ function initApp() {
     bottle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6M10 2v3.5c0 .8-.3 1.5-.9 2.1C8 8.7 7.5 9.8 7.5 11v9a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2v-9c0-1.2-.5-2.3-1.6-3.4-.6-.6-.9-1.3-.9-2.1V2M8 13h8"/></svg>',
     drop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c3 4 6 7.6 6 11a6 6 0 0 1-12 0c0-3.4 3-7 6-11z"/></svg>',
     cycle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 14-5.3M20 4v5h-5M20 12a8 8 0 0 1-14 5.3M4 20v-5h5"/></svg>',
-    gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H4a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H10a1.7 1.7 0 0 0 1-1.6V4a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V10a1.7 1.7 0 0 0 1.6 1H20a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1z"/></svg>',
-    baby: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.8 3.4c.9-1 2.3-1.2 3.1-.4"/><circle cx="12" cy="12.5" r="7.5"/><circle cx="9.3" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="14.7" cy="12" r="1" fill="currentColor" stroke="none"/><path d="M9.4 15.2c1.4 1.4 3.8 1.4 5.2 0"/></svg>',
+    gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="1.8" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="1.8" fill="currentColor" stroke="none"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="7" cy="17" r="1.8" fill="currentColor" stroke="none"/></svg>',
+    baby: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.4 3.6-7.5 8-7.5s8 3.1 8 7.5"/></svg>',
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
     camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3.3"/></svg>'
@@ -340,16 +340,23 @@ function initApp() {
 
   // ---- identity (name + photo) onboarding ----
   let identityPhotoTemp = null;
-  $('identityAvatarBtn').addEventListener('click', ()=> $('photoInput').click());
+  $('identityAvatarBtn').addEventListener('click', ()=> { pendingPhotoTarget='identity'; $('photoInput').click(); });
   let pendingPhotoTarget = 'identity';
   $('nameAvatarBtn').addEventListener('click', ()=> { pendingPhotoTarget='name'; $('photoInput').click(); });
+  $('avatarBtn').addEventListener('click', ()=> { pendingPhotoTarget='avatar'; $('photoInput').click(); });
   $('photoInput').addEventListener('change', e=>{
     const file = e.target.files[0]; if(!file) return;
     const reader = new FileReader();
-    reader.onload = ()=>{
+    reader.onload = async ()=>{
       identityPhotoTemp = reader.result;
       if(pendingPhotoTarget==='identity'){ $('identityAvatarBtn').innerHTML = `<img src="${identityPhotoTemp}">`; }
-      else { $('nameAvatarBtn').innerHTML = `<img src="${identityPhotoTemp}">`; }
+      else if(pendingPhotoTarget==='name'){ $('nameAvatarBtn').innerHTML = `<img src="${identityPhotoTemp}">`; }
+      else if(pendingPhotoTarget==='avatar'){
+        babyPhoto = identityPhotoTemp;
+        await savePhoto();
+        setAvatarImages();
+        confirmPulse('התמונה נשמרה');
+      }
     };
     reader.readAsDataURL(file);
   });
