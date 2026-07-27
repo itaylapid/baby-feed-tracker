@@ -177,18 +177,23 @@ const storage = {
       .eq("user_id", user.id)
       .eq("key", key)
       .maybeSingle();
+    if (error) console.error("app_state load failed:", key, error);
     if (error || !data) return { value: null };
     return { value: data.value };
   },
   async set(key, value) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    await supabase.from("app_state").upsert({
-      user_id: user.id,
-      key,
-      value: value === "" ? null : value,
-      updated_at: new Date().toISOString(),
-    });
+    const { error } = await supabase.from("app_state").upsert(
+      {
+        user_id: user.id,
+        key,
+        value: value === "" ? null : value,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,key" }
+    );
+    if (error) console.error("app_state save failed:", key, error);
   },
 };
 
