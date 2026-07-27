@@ -497,7 +497,7 @@ function initApp() {
   async function toggleNursing(){
     if(nursingActive){
       const durationMs=Date.now()-nursingActive.startTime;
-      const est=estimateNursingMl(durationMs);
+      const est=estimateNursingMl(nursingActive.startTime, durationMs);
       history.push({id:'h-'+Date.now(),type:'nursing',durationMs,estLow:est?est.low:null,estHigh:est?est.high:null,estMid:est?est.mid:null,startTime:nursingActive.startTime,endTime:Date.now(),outcome:'nursing'});
       await saveHistory(); nursingActive=null; await saveNursing(); clearInterval(nursingTickInterval);
       renderActionRow(); renderNurseActive(); render(); renderInsights(); renderBabyHeader();
@@ -508,21 +508,31 @@ function initApp() {
       nursingTickInterval=setInterval(renderNurseActive,1000);
     }
   }
-  function isCleanPump(session){
-    const priorFeeds = history.filter(h=> (h.type==='breast'||h.type==='formula'||h.type==='nursing') && h.endTime<=session.startTime);
-    if(!priorFeeds.length) return true;
-    const lastFeedEnd = Math.max(...priorFeeds.map(h=>h.endTime));
-    return ((session.startTime - lastFeedEnd)/60000) >= 90;
+  // A "drain" is anything that actually empties a breast - nursing or
+  // pumping. Bottle feeds don't count (the milk in a bottle was already
+  // extracted whenever it was pumped).
+  function lastDrainEndBefore(time){
+    const drains = history.filter(h=> (h.type==='nursing'||h.type==='pumped') && h.endTime<=time);
+    if(!drains.length) return null;
+    return Math.max(...drains.map(h=>h.endTime));
   }
-  function pumpRatePerMin(){
-    const pumps = history.filter(h=>h.type==='pumped' && h.startTime && h.endTime && h.endTime>h.startTime);
-    const clean = pumps.filter(isCleanPump);
-    const recent = [...clean].sort((a,b)=>b.endTime-a.endTime).slice(0,10);
-    if(!recent.length) return {rate:null, count:0};
-    const totalMl = recent.reduce((s,h)=>s+h.amount,0);
-    const totalMin = recent.reduce((s,h)=>s+((h.endTime-h.startTime)/60000),0);
-    if(totalMin<=0) return {rate:null, count:0};
-    return {rate: totalMl/totalMin, count: recent.length};
+  // Milk production rate, per breast, in ml/hour - estimated from pump
+  // sessions as (ml pumped) / (hours since the last drain before that pump),
+  // halved because a pump session empties both breasts at once while a
+  // nursing session in this app is a single sitting (effectively one side).
+  function perBreastProductionRatePerHour(){
+    const pumps = history.filter(h=>h.type==='pumped' && h.startTime && h.endTime && h.amount>0);
+    const rates=[];
+    for(const p of pumps){
+      const lastDrain = lastDrainEndBefore(p.startTime);
+      if(lastDrain===null) continue;
+      const gapHours = (p.startTime-lastDrain)/3600000;
+      if(gapHours < 0.5) continue; // too close together - rate would be noisy/inflated
+      rates.push({ rate:(p.amount/gapHours)/2, endTime:p.endTime });
+    }
+    if(!rates.length) return {rate:null, count:0};
+    const recent = rates.sort((a,b)=>b.endTime-a.endTime).slice(0,10);
+    return { rate: recent.reduce((s,r)=>s+r.rate,0)/recent.length, count: recent.length };
   }
   function bottleRatePerMin(){
     const feeds = history.filter(h=>h.type==='breast'||h.type==='formula');
@@ -532,16 +542,24 @@ function initApp() {
     if(totalMs<=0) return null;
     return totalMl/(totalMs/60000);
   }
-  function estimateNursingMl(durationMs){
+  function estimateNursingMl(startTime, durationMs){
     const durationMin = durationMs/60000;
-    const pump = pumpRatePerMin();
-    const bottleRate = bottleRatePerMin();
-    let rate=null;
-    if(pump.rate!==null && bottleRate!==null){ const w=Math.min(1,pump.count/5); rate = w*pump.rate + (1-w)*bottleRate; }
-    else if(pump.rate!==null){ rate=pump.rate; }
-    else if(bottleRate!==null){ rate=bottleRate; }
-    if(rate===null) return null;
-    const est = rate*durationMin;
+    const production = perBreastProductionRatePerHour();
+    let est=null;
+    if(production.rate!==null){
+      const lastDrain = lastDrainEndBefore(startTime);
+      const gapHours = lastDrain!==null ? (startTime-lastDrain)/3600000 : null;
+      if(gapHours!==null && gapHours>0){
+        const available = production.rate*gapHours;
+        const durationFactor = Math.min(1, durationMin/5); // short sessions likely didn't fully drain what had accumulated
+        est = available*durationFactor;
+      }
+    }
+    if(est===null){
+      const bottleRate = bottleRatePerMin();
+      if(bottleRate!==null) est = bottleRate*durationMin;
+    }
+    if(est===null) return null;
     return { low: Math.max(0,Math.round(est*0.8/5)*5), high: Math.round(est*1.2/5)*5, mid: Math.round(est/5)*5 };
   }
   async function togglePump(){
@@ -642,8 +660,8 @@ function initApp() {
     if(wastePct>=20 && feeds.length){ cards+=`<div class="tip warn"><b>פחת גבוה</b>כ-${wastePct}% מהחלב שהוכן היום נזרק.</div>`; }
     const nurseCountToday = todayHist.filter(h=>h.type==='nursing').length;
     if(nurseCountToday){
-      const pump = pumpRatePerMin();
-      const src = pump.count>=5 ? 'בעיקר על סמך נתוני שאיבה' : pump.count>0 ? 'משלב נתוני שאיבה ובקבוק' : 'על סמך קצב שתייה מבקבוקים';
+      const production = perBreastProductionRatePerHour();
+      const src = production.count>0 ? `על קצב הפרשת החלב שלך (${production.count} שאיבות אחרונות) והזמן שחלף מאז ההנקה/שאיבה הקודמת` : 'על קצב שתייה מבקבוקים בעבר';
       cards+=`<div class="tip"><b>הנקות היום</b>בוצעו ${nurseCountToday} הנקות. ההערכה מבוססת ${src}.</div>`;
     }
     if(!history.length){ cards+=`<div class="tip"><b>עוד אין נתונים</b>ככל שתתעדו יותר, כאן יופיעו תובנות על ${name}.</div>`; }
