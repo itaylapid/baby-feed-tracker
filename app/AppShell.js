@@ -32,6 +32,7 @@ const MARKUP = `
 
   <div id="viewInsights" style="display:none;">
     <div class="stat-grid" id="statGrid"></div>
+    <div id="statGridNote" style="font-size:11px; color:var(--ink-soft); margin:-6px 4px 12px;"></div>
     <div id="insightCards"></div>
     <button class="text-btn" id="viewFullHistoryBtn" style="margin-top:6px;">צפייה בהיסטוריה המלאה ←</button>
   </div>
@@ -143,6 +144,15 @@ const MARKUP = `
   </div>
 </div>
 
+<div class="overlay center" id="confirmOverlay">
+  <div class="sheet" style="text-align:center;">
+    <h2 id="confirmTitle">בטוחים?</h2>
+    <div class="sub2" id="confirmMessage"></div>
+    <button class="primary-btn" id="confirmYesBtn" style="background:var(--danger);">אישור</button>
+    <button class="text-btn" id="confirmNoBtn">ביטול</button>
+  </div>
+</div>
+
 <div class="overlay" id="overlay">
   <div class="sheet">
     <h2 id="modalTitle">בקבוק חדש</h2>
@@ -165,7 +175,7 @@ const MARKUP = `
           <path id="milkWave" d="M -10,130 Q 25,124 60,130 T 150,130 V 300 H -10 Z" fill="url(#milkGrad)"/>
         </g></g>
         <path d="M46,30 h48 v20 c17,10 27,25 27,46 v148 a18,18 0 0 1 -18,18 h-66 a18,18 0 0 1 -18,-18 v-148 c0,-21 10,-36 27,-46 z" fill="none" stroke="#EBDFCE" stroke-width="2.5"/>
-        <g stroke="#E3D6C2" stroke-width="1" font-size="8" fill="#B7A98E"><g id="tickGroup"></g></g>
+        <g stroke="var(--ink-soft)" font-size="12" font-weight="700" fill="var(--ink-soft)" style="font-family: var(--font-body);"><g id="tickGroup"></g></g>
         <rect x="0" y="0" width="140" height="280" fill="transparent" id="dragCatcher"/>
       </svg>
       <div class="gauge-num"><span id="gaugeNum">130</span><small> מ״ל</small></div>
@@ -276,6 +286,20 @@ function initApp() {
     el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
     setTimeout(()=>el.classList.remove('show'),1400);
   }
+  let confirmCallback=null;
+  function askConfirm(title, message, yesLabel, onYes){
+    $('confirmTitle').textContent=title;
+    $('confirmMessage').textContent=message;
+    $('confirmYesBtn').textContent=yesLabel;
+    confirmCallback=onYes;
+    $('confirmOverlay').classList.add('open');
+  }
+  $('confirmYesBtn').addEventListener('click', async ()=>{
+    $('confirmOverlay').classList.remove('open');
+    const cb=confirmCallback; confirmCallback=null;
+    if(cb) await cb();
+  });
+  $('confirmNoBtn').addEventListener('click', ()=>{ $('confirmOverlay').classList.remove('open'); confirmCallback=null; });
   function applyNightMode(){
     let isNight;
     if(nightOverride!==null){ isNight=nightOverride; }
@@ -520,15 +544,29 @@ function initApp() {
     if(!nursingActive){ wrap.innerHTML=''; return; }
     const ms=Date.now()-nursingActive.startTime;
     const mins=Math.floor(ms/60000), secs=Math.floor((ms%60000)/1000);
-    wrap.innerHTML=`<div class="live-card"><div class="nt">${mins}:${String(secs).padStart(2,'0')}</div><div class="nl">הנקה פעילה מ-${fmtTime(nursingActive.startTime)}</div></div>`;
+    wrap.innerHTML=`<div class="live-card"><button class="live-cancel" onclick="cancelActiveNursing()" aria-label="ביטול">✕</button><div class="nt">${mins}:${String(secs).padStart(2,'0')}</div><div class="nl">הנקה פעילה מ-${fmtTime(nursingActive.startTime)}</div></div>`;
   }
   function renderPumpActive(){
     const wrap=$('pumpActiveWrap');
     if(!pumpingActive){ wrap.innerHTML=''; return; }
     const ms=Date.now()-pumpingActive.startTime;
     const mins=Math.floor(ms/60000), secs=Math.floor((ms%60000)/1000);
-    wrap.innerHTML=`<div class="live-card"><div class="nt">${mins}:${String(secs).padStart(2,'0')}</div><div class="nl">שאיבה פעילה מ-${fmtTime(pumpingActive.startTime)}</div></div>`;
+    wrap.innerHTML=`<div class="live-card"><button class="live-cancel" onclick="cancelActivePump()" aria-label="ביטול">✕</button><div class="nt">${mins}:${String(secs).padStart(2,'0')}</div><div class="nl">שאיבה פעילה מ-${fmtTime(pumpingActive.startTime)}</div></div>`;
   }
+  window.cancelActiveNursing=function(){
+    askConfirm('לבטל הנקה?', 'ההנקה הפעילה תימחק ולא תישמר בהיסטוריה.', 'ביטול ההנקה', async ()=>{
+      nursingActive=null; await saveNursing(); clearInterval(nursingTickInterval);
+      renderActionRow(); renderNurseActive();
+      confirmPulse('ההנקה בוטלה');
+    });
+  };
+  window.cancelActivePump=function(){
+    askConfirm('לבטל שאיבה?', 'השאיבה הפעילה תימחק ולא תישמר בהיסטוריה.', 'ביטול השאיבה', async ()=>{
+      pumpingActive=null; await savePumpActive(); clearInterval(pumpTickInterval);
+      renderActionRow(); renderPumpActive();
+      confirmPulse('השאיבה בוטלה');
+    });
+  };
   async function toggleNursing(){
     if(nursingActive){
       const durationMs=Date.now()-nursingActive.startTime;
@@ -679,9 +717,11 @@ function initApp() {
     $('historyActionsOverlay').classList.add('open');
   };
   $('historyActionsCancelBtn').addEventListener('click', ()=>{ $('historyActionsOverlay').classList.remove('open'); historyActionsId=null; });
-  $('historyActionsDeleteBtn').addEventListener('click', async ()=>{
+  $('historyActionsDeleteBtn').addEventListener('click', ()=>{
     $('historyActionsOverlay').classList.remove('open');
-    if(historyActionsId){ await deleteHistoryEntry(historyActionsId); historyActionsId=null; }
+    const id=historyActionsId; historyActionsId=null;
+    if(!id) return;
+    askConfirm('למחוק רשומה?', 'הפעולה הזו לא ניתנת לביטול.', 'מחיקה', async ()=>{ await deleteHistoryEntry(id); });
   });
   $('historyActionsEditBtn').addEventListener('click', ()=>{
     $('historyActionsOverlay').classList.remove('open');
@@ -758,7 +798,7 @@ function initApp() {
     el.innerHTML = order.map(key=>`<div class="section-label" style="margin:16px 4px 8px;">${key}</div>${groups[key].map(historyItemHtml).join('')}`).join('');
   }
   $('viewFullHistoryBtn').addEventListener('click', ()=>{ renderFullHistory(); $('fullHistoryOverlay').classList.add('open'); });
-  $('showMoreHistoryBtn').addEventListener('click', ()=>{ historyExpanded=true; render(); });
+  $('showMoreHistoryBtn').addEventListener('click', ()=>{ historyExpanded=!historyExpanded; render(); });
   $('closeFullHistoryBtn').addEventListener('click', ()=>$('fullHistoryOverlay').classList.remove('open'));
   function todayTotalMl(){
     const todayStart=new Date(); todayStart.setHours(0,0,0,0);
@@ -766,9 +806,17 @@ function initApp() {
     const feeds=todayHist.filter(h=>h.type==='breast'||h.type==='formula');
     return feeds.reduce((s,h)=>s+h.consumed,0)+todayHist.filter(h=>h.type==='nursing'&&h.estMid).reduce((s,h)=>s+h.estMid,0);
   }
+  // Nursing amounts are never measured, only estimated from pump/bottle rates
+  // - anywhere a total includes one, that needs to be visible so it's never
+  // mistaken for a measured quantity.
+  function todayHasNursingEstimate(){
+    const todayStart=new Date(); todayStart.setHours(0,0,0,0);
+    return history.some(h=>h.type==='nursing' && h.estMid!=null && h.endTime>=todayStart.getTime());
+  }
   function renderTodayTotal(){
     const total=todayTotalMl();
-    $('todayTotal').innerHTML=`<span class="icon">${ICONS.bottle}</span><span class="tt-label">היום אכל/ה</span><span class="tt-num">${total} מ״ל</span>`;
+    const note = todayHasNursingEstimate() ? `<span class="tt-est">(כולל הערכת הנקה בלבד)</span>` : '';
+    $('todayTotal').innerHTML=`<span class="icon">${ICONS.bottle}</span><span class="tt-label">היום אכל/ה</span><span class="tt-num">${total} מ״ל</span>${note}`;
   }
   function render(){
     renderTodayTotal();
@@ -780,7 +828,7 @@ function initApp() {
         const st=statusOf(b); let cls='';
         if(st.expired) cls='expired'; else if(st.soon) cls='soon';
         return `<div class="card ${cls}">
-          <div class="c-top"><div class="c-type">${TYPE_LABEL[b.type]}</div><div class="c-time">הוכן ${fmtTime(b.startTime)}</div></div>
+          <div class="c-top"><div class="c-type">${TYPE_LABEL[b.type]}</div><div style="display:flex; align-items:center; gap:8px;"><div class="c-time">הוכן ${fmtTime(b.startTime)}</div><button class="c-cancel" onclick="cancelActiveBottle('${b.id}')" aria-label="הסרה">✕</button></div></div>
           <div class="c-amount">${b.amount}<small> מ״ל</small></div>
           <div class="c-status">${fmtRemaining(st.remaining)}</div>
           <div class="c-actions">
@@ -796,10 +844,11 @@ function initApp() {
       $('histLabel').style.display='block'; $('historyCard').style.display='block';
       const shown = historyExpanded ? todayEntries : todayEntries.slice(0,6);
       $('historyCard').innerHTML=shown.map(historyItemHtml).join('');
-      const remaining = todayEntries.length-shown.length;
-      if(remaining>0){ $('showMoreHistoryBtn').textContent=`הצג עוד ${remaining}`; $('showMoreHistoryBtn').style.display='block'; }
-      else { $('showMoreHistoryBtn').style.display='none'; }
-    } else { $('histLabel').style.display='none'; $('historyCard').style.display='none'; $('showMoreHistoryBtn').style.display='none'; }
+      if(todayEntries.length>6){
+        $('showMoreHistoryBtn').style.display='block';
+        $('showMoreHistoryBtn').textContent = historyExpanded ? 'הצג פחות' : `הצג עוד ${todayEntries.length-6}`;
+      } else { $('showMoreHistoryBtn').style.display='none'; }
+    } else { $('histLabel').style.display='none'; $('historyCard').style.display='none'; $('historyCard').innerHTML=''; $('showMoreHistoryBtn').style.display='none'; }
   }
   function renderInsights(){
     const todayStart=new Date(); todayStart.setHours(0,0,0,0);
@@ -812,11 +861,13 @@ function initApp() {
     const avgPerBottle=allFeeds.length?Math.round(allFeeds.reduce((s,h)=>s+h.consumed,0)/allFeeds.length):0;
     const wastePct=totalPrepared?Math.round((wasted/totalPrepared)*100):0;
     const name = profile.babyName || 'התינוק/ת';
+    const hasEst=todayHasNursingEstimate();
     $('statGrid').innerHTML=`
-      <div class="stat-box"><div class="num">${totalToday}</div><div class="lbl">מ״ל היום</div></div>
+      <div class="stat-box"><div class="num">${totalToday}${hasEst?'*':''}</div><div class="lbl">מ״ל היום</div></div>
       <div class="stat-box"><div class="num">${feeds.length}</div><div class="lbl">בקבוקים היום</div></div>
       <div class="stat-box"><div class="num">${avgPerBottle}</div><div class="lbl">ממוצע למנה</div></div>
       <div class="stat-box"><div class="num">${wastePct}%</div><div class="lbl">פחת</div></div>`;
+    $('statGridNote').textContent = hasEst ? '* כולל הערכת הנקה, לא כמות מדודה' : '';
     let cards='';
     const months=ageInMonths();
     const w=latestWeight();
@@ -825,7 +876,8 @@ function initApp() {
       let tone='', msg=`לפי משקל של ${w.weightKg} ק"ג, טווח יומי מקובל ל${name} הוא כ-${dailyMin}–${dailyMax} מ״ל. היום נצרכו כ-${totalToday} מ״ל.`;
       if(totalToday < dailyMin && feeds.length){ tone='warn'; msg=`לפי משקל של ${w.weightKg} ק"ג, טווח יומי מקובל ל${name} הוא כ-${dailyMin}–${dailyMax} מ״ל, והיום נצרכו רק כ-${totalToday} מ״ל.`; }
       else if(totalToday > dailyMax){ tone='warn'; msg=`לפי משקל של ${w.weightKg} ק"ג, טווח יומי מקובל ל${name} הוא כ-${dailyMin}–${dailyMax} מ״ל, והיום נצרכו כ-${totalToday} מ״ל - מעל הטווח.`; }
-      cards+=`<div class="tip ${tone}"><b>כמות מול משקל</b>${msg}<span class="disclaimer">מידע כללי, לא ייעוץ רפואי</span></div>`;
+      const disclaimer = hasEst ? 'מידע כללי, לא ייעוץ רפואי · הכמות כוללת הערכת הנקה' : 'מידע כללי, לא ייעוץ רפואי';
+      cards+=`<div class="tip ${tone}"><b>כמות מול משקל</b>${msg}<span class="disclaimer">${disclaimer}</span></div>`;
     } else if(months===null){ cards+=`<div class="tip"><b>הוסיפו גיל ומשקל</b>כדי לקבל השוואה אם הכמויות מתאימות ל${name}, בהגדרות.</div>`; }
     else if(allFeeds.length){
       const range=ageRangeFor(months);
@@ -851,6 +903,13 @@ function initApp() {
     $('insightCards').innerHTML=cards;
   }
 
+  window.cancelActiveBottle=function(id){
+    askConfirm('להסיר בקבוק?', 'הבקבוק יוסר בלי להישמר בהיסטוריה - לשימוש כשהוזן בטעות.', 'הסרה', async ()=>{
+      bottles=bottles.filter(x=>x.id!==id);
+      await saveBottles(); render(); renderInsights();
+      confirmPulse('הבקבוק הוסר');
+    });
+  };
   window.openClose=async function(id,reason){
     const b=bottles.find(x=>x.id===id); if(!b) return;
     if(reason==='finished'){ await closeBottle(b,0,'finished'); return; }
@@ -903,8 +962,8 @@ function initApp() {
     const g=$('tickGroup'); let s='';
     for(let v=0; v<=MAX_ML; v+=25){
       const y=yForAmount(v); const major=v%50===0;
-      s+=`<line x1="${major?26:30}" y1="${y}" x2="38" y2="${y}" stroke-width="${major?1.3:0.7}"/>`;
-      if(major) s+=`<text x="20" y="${y+3}" text-anchor="end">${v}</text>`;
+      s+=`<line x1="${major?22:30}" y1="${y}" x2="38" y2="${y}" stroke-width="${major?1.8:0.9}"/>`;
+      if(major) s+=`<text x="17" y="${y+4}" text-anchor="end">${v}</text>`;
     }
     g.innerHTML=s;
   }
@@ -987,6 +1046,9 @@ function initApp() {
     delete window.openClose;
     delete window.deleteHistoryEntry;
     delete window.openHistoryActions;
+    delete window.cancelActiveNursing;
+    delete window.cancelActivePump;
+    delete window.cancelActiveBottle;
   };
 }
 
