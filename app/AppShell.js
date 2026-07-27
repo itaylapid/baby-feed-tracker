@@ -20,6 +20,7 @@ const MARKUP = `
   </div>
 
   <div id="viewActive">
+    <div class="today-total" id="todayTotal"></div>
     <div class="action-row" id="actionRow"></div>
     <div id="nurseActiveWrap"></div>
     <div id="pumpActiveWrap"></div>
@@ -594,7 +595,18 @@ function initApp() {
     const label=h>0?`${h} שעות ${m} דק'`:`${m} דק'`;
     return ms<=0?`פג לפני ${label}`:`נותרו ${label}`;
   }
+  function todayTotalMl(){
+    const todayStart=new Date(); todayStart.setHours(0,0,0,0);
+    const todayHist=history.filter(h=>h.endTime>=todayStart.getTime());
+    const feeds=todayHist.filter(h=>h.type==='breast'||h.type==='formula');
+    return feeds.reduce((s,h)=>s+h.consumed,0)+todayHist.filter(h=>h.type==='nursing'&&h.estMid).reduce((s,h)=>s+h.estMid,0);
+  }
+  function renderTodayTotal(){
+    const total=todayTotalMl();
+    $('todayTotal').innerHTML=`<span class="icon">${ICONS.bottle}</span><span class="tt-label">היום אכל/ה</span><span class="tt-num">${total} מ״ל</span>`;
+  }
   function render(){
+    renderTodayTotal();
     const list=$('list');
     if(bottles.length===0){ list.innerHTML=`<div class="empty"><span class="icon">${ICONS.bottle}</span><div>אין בקבוקים פעילים</div></div>`; }
     else{
@@ -628,7 +640,7 @@ function initApp() {
     const todayStart=new Date(); todayStart.setHours(0,0,0,0);
     const todayHist=history.filter(h=>h.endTime>=todayStart.getTime());
     const feeds=todayHist.filter(h=>h.type==='breast'||h.type==='formula');
-    const totalToday=feeds.reduce((s,h)=>s+h.consumed,0)+todayHist.filter(h=>h.type==='nursing'&&h.estMid).reduce((s,h)=>s+h.estMid,0);
+    const totalToday=todayTotalMl();
     const totalPrepared=feeds.reduce((s,h)=>s+h.initial,0);
     const wasted=feeds.filter(h=>h.outcome==='discarded').reduce((s,h)=>s+(h.initial-h.consumed),0);
     const allFeeds=history.filter(h=>h.type==='breast'||h.type==='formula');
