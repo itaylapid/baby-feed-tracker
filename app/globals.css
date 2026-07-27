@@ -96,6 +96,7 @@ body{ font-family: var(--font-body); background: var(--bg); color: var(--ink); m
 .tip{ background: var(--accent-faint); color: var(--accent-dark); border-radius: var(--radius); padding:16px 18px; margin-bottom:12px; font-size:13px; line-height:1.6; }
 .tip b{ display:block; margin-bottom:3px; font-family: var(--font-display); font-size:14px; }
 .tip.warn{ background: var(--warn-bg); color: var(--warn-ink); }
+.tip .disclaimer{ display:block; margin-top:6px; font-size:11px; font-style:italic; opacity:0.7; }
 
 .overlay{ position:fixed; inset:0; background:rgba(61,54,48,0.35); display:none; align-items:flex-end; justify-content:center; z-index:50; }
 .overlay.open{ display:flex; }

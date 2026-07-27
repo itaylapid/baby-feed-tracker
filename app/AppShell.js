@@ -661,14 +661,14 @@ function initApp() {
       let tone='', msg=`לפי משקל של ${w.weightKg} ק"ג, טווח יומי מקובל ל${name} הוא כ-${dailyMin}–${dailyMax} מ״ל. היום נצרכו כ-${totalToday} מ״ל.`;
       if(totalToday < dailyMin && feeds.length){ tone='warn'; msg=`לפי משקל של ${w.weightKg} ק"ג, טווח יומי מקובל ל${name} הוא כ-${dailyMin}–${dailyMax} מ״ל, והיום נצרכו רק כ-${totalToday} מ״ל.`; }
       else if(totalToday > dailyMax){ tone='warn'; msg=`לפי משקל של ${w.weightKg} ק"ג, טווח יומי מקובל ל${name} הוא כ-${dailyMin}–${dailyMax} מ״ל, והיום נצרכו כ-${totalToday} מ״ל - מעל הטווח.`; }
-      cards+=`<div class="tip ${tone}"><b>כמות מול משקל</b>${msg} מידע כללי, לא ייעוץ רפואי.</div>`;
+      cards+=`<div class="tip ${tone}"><b>כמות מול משקל</b>${msg}<span class="disclaimer">מידע כללי, לא ייעוץ רפואי</span></div>`;
     } else if(months===null){ cards+=`<div class="tip"><b>הוסיפו גיל ומשקל</b>כדי לקבל השוואה אם הכמויות מתאימות ל${name}, בהגדרות.</div>`; }
     else if(allFeeds.length){
       const range=ageRangeFor(months);
       let tone='', msg=`הכמות הממוצעת (${avgPerBottle} מ״ל) בטווח המקובל לגיל (${range.min}–${range.max} מ״ל).`;
       if(avgPerBottle<range.min){ tone='warn'; msg=`הכמות הממוצעת (${avgPerBottle} מ״ל) נמוכה מהטווח המקובל (${range.min}–${range.max} מ״ל).`; }
       else if(avgPerBottle>range.max){ tone='warn'; msg=`הכמות הממוצעת (${avgPerBottle} מ״ל) גבוהה מהטווח המקובל (${range.min}–${range.max} מ״ל).`; }
-      cards+=`<div class="tip ${tone}"><b>כמות מול גיל</b>${msg} מידע כללי, לא ייעוץ רפואי.</div>`;
+      cards+=`<div class="tip ${tone}"><b>כמות מול גיל</b>${msg}<span class="disclaimer">מידע כללי, לא ייעוץ רפואי</span></div>`;
     }
     if(wastePct>=20 && feeds.length){ cards+=`<div class="tip warn"><b>פחת גבוה</b>כ-${wastePct}% מהחלב שהוכן היום נזרק.</div>`; }
     const nurseCountToday = todayHist.filter(h=>h.type==='nursing').length;
